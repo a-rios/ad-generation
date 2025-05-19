@@ -9,33 +9,10 @@ import datetime
 random.seed(42)
 
 
-# def sample_consecutive_groups(df, group_size, gen_sample_groups_per_model, gt_sample_groups):
-#
-#     n_groups = gen_sample_groups + gt_sample_groups
-#     total_rows = len(df)
-#     max_full_groups = total_rows // group_size
-#
-#     # non-overlapping group start indices
-#     group_starts = [i * group_size for i in range(max_full_groups)]
-#
-#     # sample group start indices
-#     sampled_starts = random.sample(group_starts, min(n_groups, len(group_starts)))
-#
-#     # some of these need to be gt, add attribute to distinguish when creating json
-#     gt_starts = set(random.sample(sampled_starts, gt_sample_groups))
-#     output_rows = []
-#     for start in sampled_starts:
-#         group = df.iloc[start:start + group_size].copy()
-#         group["annotate_gt"] = start in gt_starts
-#         output_rows.append(group)
-#
-#     return pd.concat(output_rows).reset_index(drop=True)
 
 def get_same_samples(df, sampled_list, source):
 
     matched_groups = []
-
-    # Optional: make a lookup dictionary for fast matching
     df_lookup = df.set_index(['name', 'anno_idx'])
 
     for group in sampled_list:
@@ -65,7 +42,7 @@ def sample_consecutive_groups(df, group_size, n_groups, model):
     groups = []
     for start in sampled_starts:
         group = df.iloc[start:start + group_size].copy()
-        group["source"] = model  # or any label you want
+        group["source"] = model
         groups.append(group)
 
     return groups
@@ -79,6 +56,7 @@ if __name__ == '__main__':
     parser.add_argument('--gt_sample_groups', type=int, help="number of ground truth samples")
     parser.add_argument('--consecutive', type=int, help="sample in consecutive groups of N ads")
     parser.add_argument('--models_same_ads', action="store_true", help="sample the same ADs for both models (default: different ADs)")
+    parser.add_argument('--gt_same_ads', action="store_true", help="sample the same ADs for ground truth (only if also --models_same_ads) ")
     parser.add_argument('--out_json', metavar='PATH',type=str, help="output json (format for label studio")
     args = parser.parse_args()
 
@@ -99,14 +77,14 @@ if __name__ == '__main__':
         df = pd.read_csv(in_csv)
         df['name'] = name
         df['model_name'] = "llama3"
-        df_llama = pd.concat([df_llama, df[10:-10]], axis=0) # exclude first + last 0 ADs to avoid credits
+        df_llama = pd.concat([df_llama, df[15:-15]], axis=0) # exclude first + last 15 ADs to avoid credits
 
     for in_csv in args.gpt_csvs:
         name = Path(in_csv).parent.stem
         df = pd.read_csv(in_csv)
         df['name'] = name
         df['model_name'] = "gpt4"
-        df_gpt = pd.concat([df_gpt, df[10:-10]], axis=0) # exclude first + last 0 ADs to avoid credits
+        df_gpt = pd.concat([df_gpt, df[15:-15]], axis=0) # exclude first + last 15 ADs to avoid credits
 
     if args.models_same_ads:
         llama3_samples = sample_consecutive_groups(df_llama, args.consecutive, args.gen_sample_groups_per_model, "llama3")
@@ -116,7 +94,12 @@ if __name__ == '__main__':
         llama3_samples = sample_consecutive_groups(df_llama, args.consecutive, args.gen_sample_groups_per_model, "llama3")
         gpt4_samples = sample_consecutive_groups(df_gpt, args.consecutive, args.gen_sample_groups_per_model, "gpt4")
 
-    gt_samples = sample_consecutive_groups(df_gpt, args.consecutive, args.gt_sample_groups, "gt")
+    if args.gt_same_ads:
+        assert args.models_same_ads, f"Need --models_same_ads to be set"
+        assert args.gen_sample_groups_per_model == args.gt_sample_groups, f"Need same number of gt and model ADs to sample if --gt_same_ads is set"
+        gt_samples = get_same_samples(df_llama, llama3_samples, "gt")
+    else:
+        gt_samples = sample_consecutive_groups(df_gpt, args.consecutive, args.gt_sample_groups, "gt")
     all_samples = llama3_samples + gpt4_samples + gt_samples
     random.shuffle(all_samples)
 
