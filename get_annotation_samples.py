@@ -106,10 +106,10 @@ if __name__ == '__main__':
     annotation_samples = []
     # anno_idx,end,imdbid,start,text_gen,text_gt,name,model_name,annotate_gt
     for group in all_samples:
-        group_list = []
+        group_dict = []
         for df_idx, sample in group.iterrows():
             if sample['source'] == "gt":
-                item = { "video": "tbd",
+                item = {
                         "text" : sample['text_gt'],
                         "gt_text" : sample['text_gt'],
                         "gen_text" : sample['text_gen'],
@@ -124,7 +124,7 @@ if __name__ == '__main__':
                         "annotation_idx" : df_idx
                         }
             else:
-                item = { "video": "tbd",
+                item = {
                         "text" : sample['text_gen'],
                         "gt_text" : sample['text_gt'],
                         "gen_text" : sample['text_gen'],
