@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+    model_name = "meta-llama/Llama-3.1-8B-Instruct"
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=args.cache_dir, token=args.llama_key)
     model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto", torch_dtype="auto", cache_dir=args.cache_dir, token=args.llama_key)

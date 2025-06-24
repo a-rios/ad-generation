@@ -24,6 +24,7 @@ if __name__ == '__main__':
         movie = ia.get_movie(imdb_id[2:])
         cast_info = []
         for person in movie.get('cast', []):
+            print(person)
 
             # download picture, if available
             ia.update(person, info=['main'])

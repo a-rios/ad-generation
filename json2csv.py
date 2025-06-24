@@ -31,7 +31,11 @@ if __name__ == '__main__':
             "La_Tentazione_Di_Esistere" : "tt24248964",
             "Wanda_mein_Wunder" : "tt10152722",
             "Body_of_Truth" : "tt11382952",
-            "Beautiful_Minds" : "tt13553662"
+            "Beautiful_Minds" : "tt13553662",
+            "Riders_of_justice" : "tt11655202",
+            "Stuerm" : "tt9502538",
+            "8_Tage_im_August" : "tt28132461",
+            "Trommelwirbel" : "tt9558602"
         }
 
     name = Path(args.json).stem
