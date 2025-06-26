@@ -153,6 +153,7 @@ if __name__ == '__main__':
 
         # need start times in the clip, not the full video -> get start of first AD in group (start of clip) = offset
         offset = group.iloc[0]['start']
+        movie_name = group[0]['name'].replace('_', ' ') # TODO check
 
         for i, (_, sample) in enumerate(group.iterrows(), start=1):
 
@@ -210,6 +211,7 @@ if __name__ == '__main__':
                         }
             group_list.append(item)
             group_dict = {'video': "tbd",
+                          'movie' : movie_name,
                           'ad_block': group_list,
                           "predictions": []}
 

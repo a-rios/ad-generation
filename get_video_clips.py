@@ -34,8 +34,10 @@ def create_predictions(group, fps):
     predictions['result'] = result
     return [predictions]
 
-def get_original_fps(video_path):
+def get_meta_info(video_path):
     probe = ffmpeg.probe(video_path)
+
+    video_length = float(probe['format']['duration'])
 
     video_streams = [stream for stream in probe['streams'] if stream['codec_type'] == 'video']
     if not video_streams:
@@ -44,7 +46,7 @@ def get_original_fps(video_path):
     r_frame_rate = video_streams[0]['r_frame_rate']
     num, denom = map(int, r_frame_rate.split('/'))
     fps = num / denom
-    return fps
+    return fps, video_length
 
 def get_paths(name, start, end, video_input_dir, video_output_dir, video_prefix_json):
     in_name = os.path.join(video_input_dir, f"{name}.mp4")
@@ -54,9 +56,9 @@ def get_paths(name, start, end, video_input_dir, video_output_dir, video_prefix_
     else:
         link_name = out_name
 
-    orig_fps = get_original_fps(in_name)
+    orig_fps, video_length = get_meta_info(in_name)
 
-    return in_name, out_name, link_name, orig_fps
+    return in_name, out_name, link_name, orig_fps, video_length
 
 
 if __name__ == '__main__':
@@ -67,6 +69,7 @@ if __name__ == '__main__':
     parser.add_argument('--video_output_dir', metavar='PATH', type=str, help="path to save extracted clips")
     parser.add_argument('--video_prefix_json', type=str, help="prefix for json to where clips will be served (e.g. localhost:port")
     parser.add_argument('--individual_clips', action="store_true", help="extract and link clips for each sample individually (default: extract one clip per group of samples (from start of first to end of last))")
+    parser.add_argument('--buffer_s', type=int, default=1, help="buffer, in seconds, before start of first AD and after last AD")
     args = parser.parse_args()
 
     with open(args.json, 'r') as f:
@@ -80,7 +83,7 @@ if __name__ == '__main__':
                     end = sample['abs_end_s']
                     duration = end - start
 
-                    in_name, out_name, link_name, fps = get_paths(sample['movie'], sample['abs_start'], sample['abs_end'], args.video_input_dir, args.video_output_dir, args.video_prefix_json)
+                    in_name, out_name, link_name, fps = get_paths(sample['movie'], sample['movie_ad_index'], sample['movie_ad_index'], args.video_input_dir, args.video_output_dir, args.video_prefix_json)
 
                     if not os.path.exists(out_name): # don't overwrite clips if already extracted
                         (
@@ -95,19 +98,21 @@ if __name__ == '__main__':
         else:
             new_data = []
             for group in data:
-                start = group['ad_block'][0]['abs_start_s']
-                end = group['ad_block'][-1]['abs_end_s']
+                start = group['ad_block'][0]['abs_start_s'] - args.buffer_s
+                end = group['ad_block'][-1]['abs_end_s'] + args.buffer_s
                 duration = end - start
 
-                in_name, out_name, link_name, fps = get_paths(group['ad_block'][0]['movie'], group['ad_block'][0]['abs_start'], group['ad_block'][-1]['abs_end'], args.video_input_dir, args.video_output_dir, args.video_prefix_json)
+                in_name, out_name, link_name, fps, video_length = get_paths(group['ad_block'][0]['movie'], group['ad_block'][0]['movie_ad_index'], group['ad_block'][-1]['movie_ad_index'], args.video_input_dir, args.video_output_dir, args.video_prefix_json)
 
                 for sample in group['ad_block']:
                     sample['first_frame'] = int(sample['rel_start_s'] * fps)
                     sample['last_frame'] = int(sample['rel_end_s'] * fps)
                     sample['frames'] = f"{sample['first_frame']+1}-{sample['last_frame']+1}" # frames in label studio interface start at 1, not 0
 
-                print(f"Extracting {out_name}")
-                if not os.path.exists(out_name): # don't overwrite clips if already extracted
+                if os.path.exists(out_name): # don't overwrite clips if already extracted
+                    print(f"Clip {out_name} already exists, skipping." )
+                else:
+                    print(f"Extracting {out_name}")
                     (
                         ffmpeg
                         .input(in_name, ss=start)
