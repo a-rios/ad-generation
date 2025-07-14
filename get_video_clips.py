@@ -83,7 +83,7 @@ if __name__ == '__main__':
                     end = sample['abs_end_s']
                     duration = end - start
 
-                    in_name, out_name, link_name, fps = get_paths(sample['movie'], sample['movie_ad_index'], sample['movie_ad_index'], args.video_input_dir, args.video_output_dir, args.video_prefix_json)
+                    in_name, out_name, link_name, fps = get_paths(sample['movie'].replace(' ','_'), sample['movie_ad_index'], sample['movie_ad_index'], args.video_input_dir, args.video_output_dir, args.video_prefix_json)
 
                     if not os.path.exists(out_name): # don't overwrite clips if already extracted
                         (
@@ -102,7 +102,7 @@ if __name__ == '__main__':
                 end = group['ad_block'][-1]['abs_end_s'] + args.buffer_s
                 duration = end - start
 
-                in_name, out_name, link_name, fps, video_length = get_paths(group['ad_block'][0]['movie'], group['ad_block'][0]['movie_ad_index'], group['ad_block'][-1]['movie_ad_index'], args.video_input_dir, args.video_output_dir, args.video_prefix_json)
+                in_name, out_name, link_name, fps, video_length = get_paths(group['ad_block'][0]['movie'].replace(' ', '_'), group['ad_block'][0]['movie_ad_index'], group['ad_block'][-1]['movie_ad_index'], args.video_input_dir, args.video_output_dir, args.video_prefix_json)
 
                 for sample in group['ad_block']:
                     sample['first_frame'] = int(sample['rel_start_s'] * fps)
@@ -125,6 +125,8 @@ if __name__ == '__main__':
                 group_dict = { "data": {
                                     "video" : link_name,
                                     "fps" : int(fps),
+                                    "movie" : group['movie'],
+                                    "preceding_ad" : group['preceding_ad'],
                                     "ad_block" : group["ad_block"]
                                     },
                               "predictions" : predictions}

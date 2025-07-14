@@ -52,12 +52,18 @@ def sample_consecutive_starts(df, group_size, n_groups, n_repeated_groups):
 
     assert n_repeated_groups < n_groups, f"Cannot repeat {n_repeated_groups} from sample size {n_groups}"
 
+    # movie boundaries: do not sample across movie boundaries!
+    movie_starts = df[df['name'] != df['name'].shift(1)]
+    invalid_starts = set()
+    for idx in movie_starts.index:
+         invalid_starts.update([idx, idx - 1, idx - 2])
+    invalid_starts = {i for i in invalid_starts if 0 <= i <= len(df) - group_size}
+
     total_rows = len(df)
-    max_full_groups = total_rows // group_size
+    max_full_groups = (total_rows // group_size)
 
     # non-overlapping group start indices
-    group_starts = [i * group_size for i in range(max_full_groups)]
-
+    group_starts = [i * group_size for i in range(max_full_groups) if (i * group_size) not in invalid_starts]
     n_to_sample = n_groups - n_repeated_groups
 
     # sample group start indices
@@ -78,7 +84,8 @@ def get_rows(df, group_starts, group_size, model):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--llama_csvs', metavar='PATH', type=str, nargs="+", help="List of stage2 llama3 csvs with generated ADs")
+    parser.add_argument('--os_csvs', metavar='PATH', type=str, nargs="+", help="List of stage2 llama3 csvs with generated ADs")
+    parser.add_argument('--os_model_name',type=str, help="name of open source model")
     parser.add_argument('--gpt_csvs', metavar='PATH', type=str, nargs="+", help="List of stage2 gpt4 csvs with generated ADs")
     parser.add_argument('--gen_sample_groups_per_model', type=int, help="number of generated AD samples")
     parser.add_argument('--gt_sample_groups', type=int, help="number of ground truth samples")
@@ -96,26 +103,31 @@ if __name__ == '__main__':
 
 
     columns = []
-    df_llama = pd.DataFrame(columns=columns)
+    df_OS = pd.DataFrame(columns=columns)
     df_gpt = pd.DataFrame(columns=columns)
-    for in_csv in args.llama_csvs:
+    df_gpt_full = pd.DataFrame(columns=columns)
+    df_OS_full = pd.DataFrame(columns=columns)
+
+    for in_csv in args.os_csvs:
         name = Path(in_csv).parent.stem
         df = pd.read_csv(in_csv)
         df['name'] = name
-        df['model_name'] = "llama3"
-        df_llama = pd.concat([df_llama, df[15:-15]], axis=0) # exclude first + last 15 ADs to avoid credits
+        df['model_name'] = args.os_model_name
+        df_OS = pd.concat([df_OS, df[15:-15]], axis=0, ignore_index=True) # exclude first + last 15 ADs to avoid credits
+        df_OS_full = pd.concat([df_OS_full, df], axis=0, ignore_index=True) # to extract preceding AD for context
 
     for in_csv in args.gpt_csvs:
         name = Path(in_csv).parent.stem
         df = pd.read_csv(in_csv)
         df['name'] = name
         df['model_name'] = "gpt4"
-        df_gpt = pd.concat([df_gpt, df[15:-15]], axis=0) # exclude first + last 15 ADs to avoid credits
+        df_gpt = pd.concat([df_gpt, df[15:-15]], axis=0, ignore_index=True) # exclude first + last 15 ADs to avoid credits
+        df_gpt_full = pd.concat([df_gpt_full, df], axis=0, ignore_index=True) # to extract preceding AD for context
 
     if args.models_same_ads:
-        sampled_starts = sample_consecutive_starts(df_llama, args.consecutive, args.gen_sample_groups_per_model, args.repeated_groups)
-        repeated_llama3_starts = random.sample(sampled_starts, args.repeated_groups)
-        llama3_starts = sampled_starts + repeated_llama3_starts
+        sampled_starts = sample_consecutive_starts(df_OS, args.consecutive, args.gen_sample_groups_per_model, args.repeated_groups)
+        repeated_OS_starts = random.sample(sampled_starts, args.repeated_groups)
+        OS_starts = sampled_starts + repeated_OS_starts
         repeated_gpt4_starts = random.sample(sampled_starts, args.repeated_groups)
         gpt4_starts = sampled_starts + repeated_gpt4_starts
 
@@ -124,26 +136,26 @@ if __name__ == '__main__':
             gt_starts = sampled_starts + repeated_gt_starts
 
     else:
-        llama3_starts = sample_consecutive_starts(df_llama, args.consecutive, args.gen_sample_groups_per_model, args.repeated_groups)
+        OS_starts = sample_consecutive_starts(df_OS, args.consecutive, args.gen_sample_groups_per_model, args.repeated_groups)
         gpt4_starts = sample_consecutive_starts(df_gpt, args.consecutive, args.gen_sample_groups_per_model, args.repeated_groups)
         gt_starts = sample_consecutive_starts(df_gpt, args.consecutive, args.gen_sample_groups_per_model, args.repeated_groups) # can sample gt from any of the dfs
 
-        repeated_llama3_starts = random.sample(llama3_starts, args.repeated_groups)
-        llama3_starts = llama3_starts + repeated_llama3_starts
+        repeated_OS_starts = random.sample(OS_starts, args.repeated_groups)
+        OS_starts = OS_starts + repeated_OS_starts
         repeated_gpt4_starts = random.sample(gpt4_starts, args.repeated_groups)
         gpt4_starts = gpt4_starts + repeated_gpt4_starts
         repeated_gt_starts = random.sample(gt_starts, args.repeated_groups)
         gt_starts = gt_starts + repeated_gt_starts
 
-    llama3_starts = shuffle_no_neighbors(llama3_starts)
+    OS_starts = shuffle_no_neighbors(OS_starts)
     gpt4_starts = shuffle_no_neighbors(gpt4_starts)
     gt_starts = shuffle_no_neighbors(gt_starts)
 
     # get rows from dfs
-    llama3_samples = get_rows(df_llama, llama3_starts, args.consecutive, "llama3")
+    OS_samples = get_rows(df_OS, OS_starts, args.consecutive, args.os_model_name)
     gpt4_samples = get_rows(df_gpt, gpt4_starts, args.consecutive, "gpt4")
     gt_samples = get_rows(df_gpt, gt_starts, args.consecutive, "gt")
-    all_samples = llama3_samples + gpt4_samples + gt_samples
+    all_samples = OS_samples + gpt4_samples + gt_samples
     random.shuffle(all_samples)
 
     annotation_samples = []
@@ -153,7 +165,7 @@ if __name__ == '__main__':
 
         # need start times in the clip, not the full video -> get start of first AD in group (start of clip) = offset
         offset = group.iloc[0]['start']
-        movie_name = group[0]['name'].replace('_', ' ') # TODO check
+        movie_name = group.iloc[0]['name']
 
         for i, (_, sample) in enumerate(group.iterrows(), start=1):
 
@@ -184,8 +196,8 @@ if __name__ == '__main__':
                         "repeated_group" : sample['group_start'] in repeated_gt_starts
                         }
             else:
-                if sample['source'] == "llama3":
-                    repeated = sample['group_start'] in repeated_llama3_starts
+                if sample['source'] == args.os_model_name:
+                    repeated = sample['group_start'] in repeated_OS_starts
                 if sample['source'] == "gpt4":
                     repeated = sample['group_start'] in repeated_gpt4_starts
                 item = {
@@ -210,8 +222,22 @@ if __name__ == '__main__':
                         "repeated_group" : repeated
                         }
             group_list.append(item)
+            # insert the text of the preceding AD (before AD1) as context for the annotation
+            preceding_idx = group_list[0]['movie_ad_index'] -1
+            if group_list[0]['model'] == 'gpt4':
+                preceding_ad_row = df_gpt_full[(df_gpt_full['anno_idx'] == preceding_idx) & (df_gpt_full['name'] == movie_name)].iloc[0]
+                preceding_ad = preceding_ad_row['text_gen']
+            else: # if OS or ground truth (for gt, doesn't matter which data frame we use)
+                preceding_ad_row = df_OS_full[(df_OS_full['anno_idx'] == preceding_idx) & (df_OS_full['name'] == movie_name)].iloc[0]
+                if group_list[0]['model'] == 'gt':
+                    preceding_ad = preceding_ad_row['text_gt']
+                else:
+                    preceding_ad = preceding_ad_row['text_gen']
+
+
             group_dict = {'video': "tbd",
-                          'movie' : movie_name,
+                          'movie' : movie_name.replace('_', ' '),
+                          'preceding_ad' : preceding_ad,
                           'ad_block': group_list,
                           "predictions": []}
 
