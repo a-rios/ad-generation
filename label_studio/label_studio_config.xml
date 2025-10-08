@@ -1,0 +1,136 @@
+<View>
+  <Style>
+  /* Styles for the main text in each item */
+  .main-ad-text {
+    color: black !important;         /* Force black color */
+    font-size: 100% !important;      /* Force 100% size */
+    font-weight: bold;
+    display: block;
+  }
+
+  /* Styles for the start/end time text in each item */
+  .time-ad-text {
+    font-size: 50% !important;    /* Force 50% size */
+    color: grey !important;         /* Force grey color */
+    margin-top: 8px;
+    display: block;
+  }
+
+  .choices-header {
+    font-size: 10% !important;
+    margin-top: 8px;
+    display: block;
+  }
+    </Style>
+
+  <Video name="video_player" value="$video" sync="ad_segment_labels" framerate="$fps" />
+
+  <TimelineLabels name="ad_segment_labels" toName="video_player">
+    <Label value="AD 1" background="rgba(255, 165, 0, 0.4)" maxUsages="0"/> <!-- Orange -->
+    <Label value="AD 2" background="rgba(100, 149, 237, 0.4)" maxUsages="0"/> <!-- Cornflower Blue -->
+    <Label value="AD 3" background="rgba(60, 179, 113, 0.4)" maxUsages="0"/> <!-- Medium Sea Green -->
+  </TimelineLabels>
+
+  <Header name="repeater_test_header_with_choices" value="Annotations: $movie"/>
+
+   <View style="font-style: italic;">
+  <Text name="prev_AD" value="preceding AD for context: $preceding_ad"/>
+  </View>
+
+  <Repeater on="$ad_block" alias="current_item" indexFlag="{{loop_idx}}">
+    <View style="border: 1px solid blue; margin: 5px; padding: 5px; background-color: #f5f5f5;">
+
+      <View className="main-ad-text">
+       <Text name="AD_label_{{loop_idx}}"
+            value="AD $ad_block[{{loop_idx}}].annotation_idx"/>
+      <Text name="text_{{loop_idx}}"
+            value="$ad_block[{{loop_idx}}].text"/>
+       </View>
+      <View className="time-ad-text">
+      <Text
+		name="frames_info_{{loop_idx}}"
+ 		value="frames: $ad_block[{{loop_idx}}].frames"/>
+       </View>
+
+      <View className="choices-header">
+      <Text name="content_header_{{loop_idx}}" value="Content:" />
+      <Choices name="labels_content_{{loop_idx}}" toName="text_{{loop_idx}}" choice="multiple" showInline="true">
+        <Choice value="irrelevant" />
+        <Choice value="missing" />
+        <Choice value="redundant" />
+        <Choice value="subjective or patronizing" />
+        <Choice value="wrong action" />
+        <Choice value="wrong object" />
+        <Choice value="text missing" />
+        <Choice value="other inaccuracy (content not in scene)" />
+      </Choices>
+     <Text name="grammar_header_{{loop_idx}}" value="Grammar:" />
+      <Choices name="labels_grammar_{{loop_idx}}" toName="text_{{loop_idx}}" choice="multiple" showInline="true">
+        <Choice value="ungrammatical/not fluent" />
+        <Choice value="too long/complex" />
+        <Choice value="wrong tense" />
+        <Choice value="English wording/phrasing (Denglisch/Itanglese)" />
+        <Choice value="other AD standards violation" />
+      </Choices>
+      <Text name="coherence_header_{{loop_idx}}" value="Coherence:" />
+      <Choices name="labels_coherence_{{loop_idx}}" toName="text_{{loop_idx}}" choice="multiple" showInline="true">
+        <Choice value="contextual gap" />
+        <Choice value="name repeated" />
+        <Choice value="content repeated" />
+        <Choice value="makes no sense/unrelated content" />
+        <Choice value="other incoherence" />
+      </Choices>
+      <Text name="characters_header_{{loop_idx}}" value="Characters:" />
+      <Choices name="labels_characters_{{loop_idx}}" toName="text_{{loop_idx}}" choice="multiple" showInline="true">
+        <Choice value="wrong character" />
+        <Choice value="wrong pronoun" />
+        <Choice value="redundant (first and last name)" />
+        <Choice value="missing name" />
+        <Choice value="bad description" />
+        <Choice value="misattributed action" />
+      </Choices>
+
+
+      <Text name="rating_header_{{loop_idx}}" value="Overall quality:" />
+      	<View style="background-color: #767578; display: inline-block; padding: 2px 5px; border-radius: 3px;">
+     	 <Rating name="rating_{{loop_idx}}" toName="text_{{loop_idx}}"
+              maxRating="5" icon="star" defaultValue="3"
+              size="small" required="true"
+              requiredMessage="Please rate the overall quality of each AD"
+              style="background-color: #d6d5de;"/>
+      	</View>
+      </View>
+
+
+
+
+       <!-- "Button" to toggle comment visibility for this item -->
+      <Choices name="comment_toggle_{{loop_idx}}" toName="text_{{loop_idx}}" choice="single" showInline="true" layout="select">
+        <!--
+            - choice="single" means only one can be active.
+            - layout="select" can sometimes make single choices look more like buttons/toggles
+              though the default might be fine.
+            - We'll use the *selection* of this choice to control visibility.
+        -->
+      <Choice value="Other errors (or add comment)" selected="false" />
+      <!--
+          We could also have a "Hide Comment" choice if we want to explicitly hide it,
+          or just unselecting "Add Comment" would hide the TextArea.
+          For simplicity, just having "Add Comment" and relying on its selection state is often enough.
+      -->
+    </Choices>
+
+    <!-- Conditional TextArea for this item -->
+    <View visibleWhen="choice-selected" whenTagName="comment_toggle_{{loop_idx}}" whenChoiceValue="Other errors (or add comment)">
+    <TextArea
+        name="comment_{{loop_idx}}"
+        toName="text_{{loop_idx}}"
+        placeholder="Enter your comment for this item..."
+        rows="3"
+        editable="true"
+        maxSubmissions="1"
+        style="margin-left: 15px; margin-top: 5px; margin-bottom: 15px;"/>
+      </View>
+    </View>
+  </Repeater>
+</View>

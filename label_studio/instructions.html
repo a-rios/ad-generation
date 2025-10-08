@@ -1,0 +1,170 @@
+<style>
+  dt {
+    font-weight: bold;
+    color: #343aeb;
+  }
+  .highlight {
+    color: red;
+  }
+  .with-bullets {
+    list-style-type: disc;   /* or circle, square */
+    padding-left: 1.2em;     /* ensures bullets are visible */
+    margin: 0;
+  }
+</style>
+
+
+<h2>Instructions</h2>
+
+<div><span class="highlight">NOTE:</span> Label studio prevents links from automatically opening in a new tab/window, use right-click  “Open in new tab” to open the linked PDFs if needed.</div></br>
+
+<div>This is just a small overview of the labels, for more detailed instructions (including navigating the interface) you can download the <a href="https://raw.githubusercontent.com/a-rios/ad-generation/master/pdfs/AD_annotation_guidelines.pdf" >annotation guidelines as PDF</a>.</div></br>
+
+<div>To help with character identification, see these lists with <a href="https://raw.githubusercontent.com/a-rios/ad-generation/master/pdfs/Characters_de.pdf">characters in the German movies</a> and this list with <a href="https://raw.githubusercontent.com/a-rios/ad-generation/master/pdfs/Characters_it.pdf">characters in the Italian movies</a> (data for both from IMDB).</div></br>
+
+<div>One of the German movies, <i>8 Tage im August</i>, contains occasional dialogue snippets in English. Those are not considered for this task (the models did not have access to the audio).</div></br>
+<div>Additionally, the timing of the descriptions is not part of the evaluation, the models use the same timings as the original descriptions created by the audio describer.</div></br>
+
+<h2>Labels</h2>
+
+<h3>Content:</h3>
+
+<dl>
+  <dt>irrelevant</dt>
+  <dd>AD contains unnecessary information</dd>
+
+  <dt>missing</dt>
+  <dd>AD misses crucial information or is too vague, e.g. <i>she holds an <span class="highlight">object</span></i> </dd>
+
+  <dt>redundant</dt>
+  <dd>AD contains redundant information, e.g. <i>the phone is ringing</i>, but the ringing is heard in the audio</dd>
+
+  <dt>subjective and/or patronizing</dt>
+  <dd>AD is not neutral, e.g. <i>the kitchen is a mess</i> instead of <i>dirty dishes are stacked on the counter.</i></dd>
+
+  <dt>wrong action</dt>
+  <dd>AD has an action that is wrong, e.g. <i>the man is walking</i> but in the clip, the character is running</dd>
+
+  <dt>wrong object</dt>
+  <dd>AD has an object that was not correctly identified, e.g. <i>the man is holding a phone</i> but in the clip, the character is is holding a book</dd>
+
+  <dt>text missing</dt>
+  <dd>AD is missing relevant information from text shown in the scene, this could be text on a note, in a book or on a phone screen in the movie itself, or a text overlay (e.g., credits, or <i><span class="highlight">5 years earlier</span></i> to introduce a flashback scene).</dd>
+
+  <dt>other inacurracy</dt>
+  <dd>AD contains wrong information of another type, not covered by the given categories (not a wrong action, object or character)</dd>
+</dl>
+
+
+<h3>Grammar:</h3>
+
+<dl>
+  <dt>ungrammatical/not fluent</dt>
+  <dd>AD has grammatical errors or awkward phrasing, e.g <i>Gregi betrachtet den Kuchen, Wanda ihn.</i></dd>
+
+  <dt>too long/complex</dt>
+  <dd>The description is too long and/or too complex, e.g., with nested sentences.</dd>
+
+  <dt>wrong tense</dt>
+  <dd>AD is not in present tense</dd>
+
+  <dt>English wording/phrase (Denglisch/Itanglese)</dt>
+  <dd>AD contains phrases or words that are literal translations from English, e.g. <i>Sie betrachtet sich im Spiegel und <span class="highlight">justiert</span> ihr Haar</i>, <i>lei <span class="highlight">si rompe giù</span> in lacrime</i>.</dd>
+
+
+  <dt>other AD standards violation</dt>
+  <dd>The description violates AD standards or guidelines in some other form that is not covered by the other tags.</dd>
+
+</dl>
+
+
+<h3>Coherence:</h3>
+
+<dl>
+  <dt>contextual gap</dt>
+  <dd>AD has an information gap to the previous AD, there is a logical jump that makes it confusing:
+
+    <table>
+      <tr>
+        <td>AD1:</td>
+        <td><i>Paul and Lisa are talking to each other in front of the car.</i></td>
+      </tr>
+      <tr>
+        <td>AD2:</td>
+        <td><i>Paul closes the door and leans back.</i></td>
+      </tr>
+      </table>
+   &rarr; Paul getting in the car was not mentioned.
+  </dd>
+
+  <dt>name repeated</dt>
+  <dd>AD repeats the name from the previous AD, example: </br>
+
+      <table>
+      <tr>
+        <td>AD1:</td>
+        <td><i><span class="highlight">Paul</span> sits down at the table</i></td>
+      </tr>
+      <tr>
+        <td>AD2:</td>
+        <td><i><span class="highlight">Paul</span> starts eating</i></td>
+      </tr>
+      </table>
+  </dd>
+
+  <dt>content repeated</dt>
+  <dd>AD repeats content from previous AD, example:</br>
+
+  <table>
+      <tr>
+        <td>AD1:</td>
+        <td><i>Paul is talking on the phone, walking down the street.</i></td>
+      </tr>
+      <tr>
+        <td>AD2:</td>
+        <td><i>Paul talks on the phone.</i></td>
+      </tr>
+      </table>
+    </dd>
+
+  <dt>makes no sense/unrelated content</dt>
+  <dd>The description makes no sense with respect to the clip and/or has completely unrelated content.</dd>
+
+  <dt>other incoherence</dt>
+  <dd>AD is not properly 'connected' to the previous AD, not none of the other labels apply.</dd>
+
+</dl>
+
+
+<h3>Characters:</h3>
+
+<dl>
+  <dt>wrong character</dt>
+  <dd>AD has a character name that is not in the clip</dd>
+
+  <dt>wrong pronoun</dt>
+  <dd>AD has a wrong pronoun, e.g. <i>she</i> instead of <i>he</i></dd>
+
+  <dt>redundant</dt>
+  <dd>AD has the correct character, but uses first and last name or some additional description that makes it sound unnatural</dd>
+
+  <dt>missing name</dt>
+  <dd>AD contains a description or a pronoun when the name was needed</dd>
+
+  <dt>bad description</dt>
+  <dd>AD describes a character by physical attributes, but is:
+  <ul class="with-bullets">
+   <li> wrong (<i>a blonde man</i>, but the person has dark hair)</li>
+   <li>inappropriate</li>
+   <li>too vague to be useful</li>
+  </ul></dd>
+
+  <dt>misattributed action</dt>
+  <dd>characters named in the AD are in the scene, but are not correctly associated with the action, example:
+   <li>scene is <i>A looks at B</i></li>
+   <li>AD is: <i><span class="highlight">B</span>  looks at <span class="highlight">A</span> </i></li>
+   <li>scene is <i>A and B are walking through a park, B is smoking</i></li>
+   <li>AD is: <i>A and B are walking through a park, <span class="highlight">A</span>  is smoking</i></li>
+  </ul></dd>
+</dl>
+
