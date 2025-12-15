@@ -5,29 +5,99 @@ import re
 import json
 import argparse
 import pandas as pd
-from typing import List, Dict, Tuple
+from collections import Counter
+from typing import List, Dict, Optional, Tuple
 
 
 
-def insert_offsets_in_order(preds: List[Dict], text: str):
+# def insert_offsets_in_order(preds: List[Dict], text: str):
+#     """
+#     Assign (start,end) to each prediction by finding the next occurrence of its span
+#     at/after a moving cursor. If not found, mark start/end as None/None.
+#     """
+#     cursor = 0
+#     for p in preds:
+#         span = p["text"]
+#         pattern = r'\b' + re.escape(span) + r'\b'
+#         m = re.search(pattern, text[cursor:])
+#         if not m:
+#             p["start"] = None
+#             p["end"] = None
+#         else:
+#             start = cursor + m.start()
+#             end = start + len(span)
+#             p["start"] = start
+#             p["end"] = end
+#             cursor = end
+#     return preds
+
+
+def insert_offsets_in_order(
+    preds: List[Dict],
+    gold: List[Dict],
+    text: str
+):
     """
-    Assign (start,end) to each prediction by finding the next occurrence of its span
-    at/after a moving cursor. If not found, mark start/end as None/None.
+    Greedy left-to-right span matching with a special tie-breaker:
+    - If a predicted span occurs multiple times after cursor:
+        * if there are MORE predictions of the same span later -> match earliest
+        * else (this is the last one) -> prefer a candidate that matches gold
+    - If not found -> start/end = None
     """
     cursor = 0
+
+    # Remaining counts for lookahead decisions for each text form in mentions
+    remaining = Counter(p["text"] for p in preds)
+
+    # Precompute gold lookup for tie-breaking (optional)
+    gold_strict = set()   # (start,end,label)
+    gold_span = set()     # (start,end,text)
+
+    for g in gold:
+        gs, ge = g["start"], g["end"]
+        gtext = g.get("text", text[gs:ge])
+        gold_span.add((gs, ge, gtext))
+        for lab in g.get("labels", []):
+            gold_strict.add((gs, ge, lab))
+
     for p in preds:
         span = p["text"]
-        pattern = r'\b' + re.escape(span) + r'\b'
-        m = re.search(pattern, text[cursor:])
-        if not m:
+        lab = p.get("label")
+        remaining[span] -= 1  # after this item, how many same-span preds remain?
+
+        pattern = r"\b" + re.escape(span) + r"\b"
+
+        # all candidates at/after cursor
+        candidates: List[Tuple[int, int]] = []
+        for m in re.finditer(pattern, text[cursor:]):
+            s = cursor + m.start()
+            e = cursor + m.end()
+            candidates.append((s, e))
+
+        if not candidates:
             p["start"] = None
             p["end"] = None
-        else:
-            start = cursor + m.start()
-            end = start + len(span)
-            p["start"] = start
-            p["end"] = end
-            cursor = end
+            continue
+
+        # default: greedy earliest
+        chosen = candidates[0]
+
+        # special case: multiple candidates and this is the LAST predicted occurrence of this span
+        if len(candidates) > 1 and remaining[span] == 0:
+            # Prefer a candidate that matches gold STRICT (span + label), if possible
+            strict_hits = [(s, e) for (s, e) in candidates if (s, e, lab) in gold_strict]
+            if strict_hits:
+                chosen = strict_hits[0]
+            else:
+                # Else prefer a candidate that matches gold by span+text (label-agnostic)
+                span_hits = [(s, e) for (s, e) in candidates if (s, e, span) in gold_span]
+                if span_hits:
+                    chosen = span_hits[0]
+                # else keep earliest
+
+        p["start"], p["end"] = chosen
+        cursor = p["end"]
+
     return preds
 
 
@@ -86,7 +156,7 @@ def score_sample(preds: List[Dict], gold: List[Dict], idx: int) -> Tuple[Tuple[i
                     break
             if not matched:
                 fp_span += 1
-                print(f"{idx} FP: {p}, gold: {gold}")
+                # print(f"{idx} FP: {p}, gold: {gold}")
 
     # Any unused gold are FNs
     fn_strict = used_strict.count(False)
@@ -147,7 +217,7 @@ def main(args):
         else:
             # get start/end times for predicted spans, note: predictions can have overlapping spans (not allowed), repeat labels (e.g. too many of the same pronoun) (FP) or not enough (FN)
             # -> we need to keep track of what's already been matched, i.e. the last matched index since labels go left to right
-            predicted_json = insert_offsets_in_order(predicted_json, full_text)
+            predicted_json = insert_offsets_in_order(predicted_json, gold_json, full_text)
             (tp_strict, fp_strict, fn_strict), (tp_span, fp_span, fn_span) = score_sample(predicted_json, gold_json, idx)
             TP_strict += tp_strict
             TP_span += tp_span
