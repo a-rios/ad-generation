@@ -112,6 +112,8 @@ intra_annotator_agreement_Italian = defaultdict( lambda: {  'first' : copy.deepc
                                                             'annotator_id_2' : "str"
                                                          })
 
+samples_list_for_csv = [] # list of dicts for each sample with AD + annotations, for easier manual checking. will be printed as csv
+
 def add_to_rating(model: str, lang: str, movie: str, rating: int):
 
     assert int(rating)>=1 and int(rating)<=5, f"Invalid rating (values 1-5): {rating}"
@@ -144,21 +146,12 @@ def get_movie_idx(data_samples: List[dict], to_name: str):
     return int(data_samples[int(i)]["movie_ad_index"])
 
 
-def add_to_agreement_table(lang: str, model: str, movie: str, movie_ad_idx: int, annotator: str, rating: Optional[int], tags: Optional[List[str]]):
-    key = f"{movie} #{movie_ad_idx}"
-
-    if lang == "German":
-        table = intra_annotator_agreement_German
-    elif lang == "Italian":
-        table = intra_annotator_agreement_Italian
-
-    pass_nr = 'first'
-    if key in table.keys(): # this is the second pass
-        pass_nr = 'second'
+def add_to_agreement_table(table: defaultdict, key: str, pass_nr: str, annotator: str, rating: Optional[int], tags: Optional[List[str]]):
 
     if tags is not None:
         for tag in tags:
-            table[key][pass_nr][tag] +=1
+            if tag != "Other errors (or add comment)": # don't count comments towards agreement (seems to be used mostly for corrections/suggestions how to improve
+                table[key][pass_nr][tag] +=1
 
     if rating is not None:
         table[key][pass_nr]['ordinal_rating'] = rating
@@ -175,7 +168,8 @@ def calculate_cohens_kappa(lang: str):
         table = intra_annotator_agreement_German
     else:
         table = intra_annotator_agreement_Italian
-    #pprint(table, indent=2, width=100, depth=5)
+    # pprint(table, indent=2, width=100, depth=5)
+    # exit(0)
 
     first_pass_tag_values = {"irrelevant" : [], "missing" : [],  "redundant" : [],  "subjective or patronizing" : [],
                              "wrong action" : [], "wrong object" : [], "text missing" : [],"other inaccuracy (content not in scene)" : [],
@@ -227,9 +221,9 @@ def calculate_cohens_kappa(lang: str):
 
 def get_stats_kappa(tags: dict):
     # return mean, media, minimum with tag, maximum with tag, std dev
-    kappas = [k for k in tags_cohens_kappa.values()]
-    min_item = min(tags_cohens_kappa.items(), key=lambda x: x[1])
-    max_item = max(tags_cohens_kappa.items(), key=lambda x: x[1])
+    kappas = [k for k in tags.values()]
+    min_item = min(tags.items(), key=lambda x: x[1])
+    max_item = max(tags.items(), key=lambda x: x[1])
 
     out_string = f"""
                 mean: {np.mean(kappas)}
@@ -308,6 +302,7 @@ def parse_args():
     parser.add_argument('--out_dir', type=str, required=True, help='write output to this directory. Will write 3 files (one for each model: ground truth, gpt4, open source)')
     parser.add_argument('--print_cohens_kappa_per_label', action='store_true', help='print kappa for each label')
     parser.add_argument('--print_cohens_kappa_per_group', action='store_true', help='print kappa for groups of labels (content, grammar, coherence, characters)')
+
     return parser.parse_args()
 
 
@@ -322,8 +317,13 @@ if __name__ == '__main__':
         lang = ""
         if data[0]['data']['movie'] in ["Moskau einfach", "8 Tage im August", "Baghdad in my Shadow", "Trommelwirbel"]:
             lang = "German"
+            table = intra_annotator_agreement_German
         elif data[0]['data']['movie']  in ["La Tentazione Di Esistere", "Riders of justice", "Stuerm", "Quanto basta"]:
             lang = "Italian"
+            table = intra_annotator_agreement_Italian
+
+        # store each sample with its annotations for printing as a simplified csv (to make finding samples/annotations easier)
+        samples_list_for_csv = []
 
         for sample in data:
             annotations = sample["annotations"]
@@ -338,24 +338,60 @@ if __name__ == '__main__':
                 repeated_group = data["ad_block"][0]["repeated_group"] # same here
                 data_samples = [i for i in data["ad_block"]]
 
-                # movie_idxs = [data_dict["movie_ad_index"] for data_dict in  data["ad_block"]]
-
                 for annotation in annotations:
                     annotator = annotator_ids[int(annotation["completed_by"])]
+
+                    samples_dict = dict(defaultdict())
+                    agreement_table_keys = dict()
+                    for i in [0,1,2]:
+                        sample_dict = { "AD": data_samples[i]["text"],
+                                       "source": data_samples[i]["model"],
+                                       "movie" :  movie,
+                                       "movie_ad_idx" : data_samples[i]["movie_ad_index"],
+                                       "repeated" : repeated_group,
+                                       "rating" : None,
+                                       "tags" : [],
+                                       "comments" : None
+                            }
+                        samples_dict[i] = sample_dict
+                        agreement_table_keys[i] = f"{movie} #{data_samples[i]["movie_ad_index"]} #{model}"
+
+                    # check if all 3 keys are present in agreement table, if so, this is the second pass
+                    found = sum(1 for v in agreement_table_keys.values() if v in table)
+                    if found == 0:
+                        pass_nr = 'first'
+                    elif found == 3:
+                        pass_nr = 'second'
+                    else:
+                        print(f"Partially existing keys found in table for: {agreement_table_keys.values()}, found {found}, \n table: {pprint(table, indent=2, width=100, depth=5)}")
+                        exit(0)
+
                     for result_dict in annotation["result"]: # result = list of dicts with annotations
                         if result_dict['origin'] == "manual": # ignore 'predictions' (timespans used for easier video navigation)
-                            # print(result_dict)
+                            movie_ad_idx = get_movie_idx(data_samples, result_dict["to_name"])
+                            agreement_table_key =  f"{movie} #{movie_ad_idx} #{model}"
+                            target = int(result_dict["to_name"].split("_")[1]) # text index
+
                             if result_dict["type"] == "rating":
                                 stars = result_dict["value"]["rating"]
+                                samples_dict[target]["rating"] = stars
                                 add_to_rating(model, lang, movie, stars)
                                 if repeated_group:
-                                    movie_ad_idx = get_movie_idx(data_samples, result_dict["to_name"])
-                                    add_to_agreement_table(lang, model, movie, movie_ad_idx, annotator, stars, None)
+                                    add_to_agreement_table(table, agreement_table_key, pass_nr, annotator, stars, None)
                             elif result_dict["type"] == "choices":
                                 tags = result_dict["value"]["choices"]
+                                samples_dict[target]["tags"].append(tags)
                                 add_to_tags(model, lang, movie, tags)
                                 if repeated_group:
-                                    add_to_agreement_table(lang, model, movie, movie_ad_idx, annotator, None, tags)
+                                    add_to_agreement_table(table, agreement_table_key, pass_nr, annotator, None, tags)
+                            elif result_dict["type"] == "textarea": # comments are here, if entered, as a list with a single text item
+                                samples_dict[target]["comments"] = result_dict["value"]["text"][0]
+                    samples_list_for_csv.extend([sample_dict for k, sample_dict in samples_dict.items()])
+
+        # print samples to csv for manual inspection
+        csv_outname = os.path.join(args.out_dir, f"{lang}_samples.annotations.csv")
+        csv_out_df = pd.DataFrame(samples_list_for_csv)
+        csv_out_df.to_csv(csv_outname, encoding='utf-8', index=False)
 
 
         # print(json.dumps(groundtruth_results, indent=2))
