@@ -4,12 +4,14 @@ import json
 import argparse
 import copy
 import re
+import warnings
 from collections import defaultdict
 from typing import List, Optional
 from sklearn.metrics import cohen_kappa_score # > 0.8 = good
 import numpy as np
 from pprint import pprint
 import pandas as pd
+from sklearn.metrics import precision_recall_fscore_support
 
 ########################################################
 # 200 samples groups per model (qwen, gpt, groundtruth #
@@ -29,7 +31,8 @@ annotator_ids = { 1: "AR",
                   3: "LF",
                   4: "VL", # == user 6
                   5: "BS",
-                  6: "VL"
+                  6: "VL",
+                  7: "FA"
     }
 
 category_dict = {   "irrelevant" : 0,
@@ -162,14 +165,8 @@ def add_to_agreement_table(table: defaultdict, key: str, pass_nr: str, annotator
         table[key]['annotator_id_2'] = annotator
         assert table[key]['annotator_id_1'] == table[key]['annotator_id_2'], f"Different annotator IDs on {key}, first pass is {table[key]['annotator_id_1']}, second pass is {table[key]['annotator_id_2']}"
 
-def calculate_cohens_kappa(lang: str):
+def calculate_cohens_kappa(table: defaultdict):
 
-    if lang == "German":
-        table = intra_annotator_agreement_German
-    else:
-        table = intra_annotator_agreement_Italian
-    # pprint(table, indent=2, width=100, depth=5)
-    # exit(0)
 
     first_pass_tag_values = {"irrelevant" : [], "missing" : [],  "redundant" : [],  "subjective or patronizing" : [],
                              "wrong action" : [], "wrong object" : [], "text missing" : [],"other inaccuracy (content not in scene)" : [],
@@ -207,17 +204,29 @@ def calculate_cohens_kappa(lang: str):
         for key in table[idx]['second'].keys():
             if key not in ['rating', 'ordinal_rating']:
                 second_pass_tag_values[key].append(table[idx]['second'][key])
-    #pprint(first_pass_tag_values, indent=2)
-    #pprint(second_pass_tag_values, indent=2)
-    for (tag1, valuelist1), (tag2, valuelist2) in zip(first_pass_tag_values.items(), second_pass_tag_values.items()):
-        assert tag1 == tag2, f"Cannot calculate Cohen's kappa for different tags: first pass tag={tag1}, second pass tag={tag2}"
-        kappa = cohen_kappa_score(valuelist1, valuelist2)
-        if np.isnan(kappa): # if there is no variance, i.e. everything is 0 or 1 -> kappa will be NaN (division by 0), but this is perfect agreement
-            kappa = 1.0
-        tags_cohens_kappa[tag1] = kappa
 
-    ratings_cohens_kappa = cohen_kappa_score(first_pass_rating_values, second_pass_rating_values, weights='quadratic') # quadratic: penalty increases with the square of the distance, i.e., a rating of 1 vs. 2 is better than 1 vs. 5
-    return tags_cohens_kappa, ratings_cohens_kappa
+    #pprint(first_pass_tag_values, indent=2)
+    # pprint(second_pass_tag_values, indent=2)
+    # exit(0)
+
+    fscores_per_tag = {}
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=RuntimeWarning) # kappa undefined if no variance (=perfect agreement), don't print warnings
+        warnings.filterwarnings('ignore', category=UserWarning)
+        for (tag1, valuelist1), (tag2, valuelist2) in zip(first_pass_tag_values.items(), second_pass_tag_values.items()):
+            assert tag1 == tag2, f"Cannot calculate Cohen's kappa for different tags: first pass tag={tag1}, second pass tag={tag2}"
+            kappa = cohen_kappa_score(valuelist1, valuelist2)
+            if np.isnan(kappa): # if there is no variance -> kappa will be NaN (division by 0), but this is perfect agreement
+                kappa = 1.0
+            tags_cohens_kappa[tag1] = kappa
+            ## get f1, precision, recall of tag1 vs.tag2
+            precision, recall, f1, _ = precision_recall_fscore_support(valuelist1, valuelist2, average='binary', zero_division=0)
+            fscores_per_tag[tag1] = {'precision': precision, 'recall': recall, 'f1': f1}
+
+
+        ratings_cohens_kappa = cohen_kappa_score(first_pass_rating_values, second_pass_rating_values, weights='quadratic') # quadratic: penalty increases with the square of the distance, i.e., a rating of 1 vs. 2 is better than 1 vs. 5
+
+    return tags_cohens_kappa, ratings_cohens_kappa, fscores_per_tag
 
 def get_stats_kappa(tags: dict):
     # return mean, media, minimum with tag, maximum with tag, std dev
@@ -233,6 +242,46 @@ def get_stats_kappa(tags: dict):
                 std dev: {np.std(kappas, ddof=1):.3f}
         """
     return out_string
+
+def calculate_jaccard_similarity(table: defaultdict()):
+    jaccard_scores = []
+
+    for idx in table:
+        # tags from first and second pass
+        first_pass = table[idx]['first']
+        second_pass = table[idx]['second']
+
+        # extract tags that are marked as 1 (present)
+        # exclude ratings
+        tags_to_check = [k for k in first_pass.keys()
+                        if k not in ['ordinal_rating', 'rating']]
+
+        # sets of tags that are present (value = 1)
+        tags_first = set(tag for tag in tags_to_check if first_pass[tag] == 1)
+        tags_second = set(tag for tag in tags_to_check if second_pass[tag] == 1)
+
+        # Jaccard similarity for this sample
+        if tags_first or tags_second:  # at least one tag present
+            intersection = len(tags_first & tags_second)
+            union = len(tags_first | tags_second)
+            jaccard = intersection / union
+        else:  # both empty, no errors in this sample: perfect agreement
+            jaccard = 1.0
+
+        jaccard_scores.append(jaccard)
+
+    # Return mean and other stats
+    mean_jaccard = np.mean(jaccard_scores)
+    median_jaccard = np.median(jaccard_scores)
+    std_jaccard = np.std(jaccard_scores)
+
+    return {
+        'mean': mean_jaccard,
+        'median': median_jaccard,
+        'std': std_jaccard,
+        'scores': jaccard_scores
+    }
+
 
 def get_error_counts(annotations: defaultdict, lang: str):
     rows = []
@@ -302,6 +351,8 @@ def parse_args():
     parser.add_argument('--out_dir', type=str, required=True, help='write output to this directory. Will write 3 files (one for each model: ground truth, gpt4, open source)')
     parser.add_argument('--print_cohens_kappa_per_label', action='store_true', help='print kappa for each label')
     parser.add_argument('--print_cohens_kappa_per_group', action='store_true', help='print kappa for groups of labels (content, grammar, coherence, characters)')
+    parser.add_argument('--print_min_count', type=int, default=15, help='print kappa and F1(P/R scores for tags with >N counts')
+
 
     return parser.parse_args()
 
@@ -418,20 +469,29 @@ if __name__ == '__main__':
         GT_df_errors.to_csv(GT_outname, encoding='utf-8', index=False)
         GPT_df_errors.to_csv(GPT_outname, encoding='utf-8', index=False)
 
+        counts = defaultdict()
+        for key in table:
+            for tag in table[key]['first']:
+                if tag not in ['ordinal_rating', 'rating']:
+                    if tag not in counts:
+                        counts[tag] = 0
+                    if table[key]['first'][tag] == 1:
+                        counts[tag] += 1
+                    if table[key]['second'][tag] == 1:
+                        counts[tag] +=1
 
         #############################
         # intra-annotator agreement #
         #############################
-        tags_cohens_kappa, ratings_cohens_kappa = calculate_cohens_kappa(lang)
+        tags_cohens_kappa, ratings_cohens_kappa, fscores_per_tag = calculate_cohens_kappa(table)
+        jaccard_scores = calculate_jaccard_similarity(table)
         print("************************************************************************")
         print(f"Intra-annotator agreement (Cohen's kappa):")
         print(f"Ratings Cohen's kappa: {ratings_cohens_kappa}")
-        print(f"Tags Cohen's kappa, overall:")
-        print(get_stats_kappa(tags_cohens_kappa))
 
         if args.print_cohens_kappa_per_label:
             for tag, kappa in tags_cohens_kappa.items():
-                print(f"{tag}: {kappa}")
+                print(f"{tag}: count: {counts[tag]} - kappa: {kappa}")
 
         if args.print_cohens_kappa_per_group:
             content_kappas = {k:v for k,v in tags_cohens_kappa.items() if k in ["irrelevant", "missing", "redundant", "subjective or patronizing", "wrong action", "wrong object", "text missing", "other inaccuracy (content not in scene)"]}
@@ -450,6 +510,33 @@ if __name__ == '__main__':
             character_kappas = {k:v for k,v in tags_cohens_kappa.items() if k in ["wrong character", "wrong pronoun", "redundant (first and last name)", "missing name", "bad description", "misattributed action"]}
             print(f"\tCharacter tags:")
             print(get_stats_kappa(character_kappas))
+
         print("************************************************************************")
+        print(f"""Jaccard similarity:
+                    mean: {jaccard_scores['mean']}
+                    median: {jaccard_scores['median']}
+                    std: {jaccard_scores['std']}""")
+        print("************************************************************************")
+        print(f"F1, precision, recall first pass vs. second pass")
+        for tag, scores in fscores_per_tag.items():
+            print(f"""{tag} ({counts[tag]}):
+                            p: {scores['precision']}
+                            r: {scores['recall']}
+                            f1: {scores['f1']}""")
+
+        print("************************************************************************")
+        print(f"Scores for tags with count > {args.print_min_count}:")
+        for tag, count in counts.items():
+            if count > args.print_min_count:
+                print(f"""{tag}
+                                count: {count}
+                                F1: {fscores_per_tag[tag]['f1']}
+                                P: {fscores_per_tag[tag]['precision']}
+                                R: {fscores_per_tag[tag]['recall']}
+                                kappa: {tags_cohens_kappa[tag]}
+                                """)
+        print("************************************************************************")
+
+
 
 
